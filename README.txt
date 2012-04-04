@@ -36,8 +36,9 @@ startup-exception:  Invalid certificate received from server (mono issue for mis
 Linux
 #shell: sudo mozroots --import --sync
 
-Windows:
-mozroots.exe --import --sync
+or
+
+#shell: mozroots --import --sync
 -----------------------------------------------------------------------------------------
 
 :Add following Lines to OpenSim.ini:
