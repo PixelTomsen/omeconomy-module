@@ -1,5 +1,5 @@
 /*
- * Michael E. Steurer, 2010
+ * Michael E. Steurer, 2011
  * Institute for Information Systems and Computer Media
  * Graz University of Technology
  *
@@ -291,7 +291,7 @@ namespace OMEconomy.OMBase
             }
             catch (Exception e)
             {
-                m_log.InfoFormat("[OMBASE]: LeaveAvatar(): " + e.Message);
+                m_log.DebugFormat("[OMBASE]: LeaveAvatar(): {0}", e.Message);
             }
         }
 

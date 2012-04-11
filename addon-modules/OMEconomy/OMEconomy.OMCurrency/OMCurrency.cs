@@ -25,7 +25,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  * Major changes.
- *   Michael E. Steurer, 2010
+ *   Michael E. Steurer, 2011
  *   Institute for Information Systems and Computer Media
  *   Graz University of Technology
  */

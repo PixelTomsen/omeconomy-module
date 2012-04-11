@@ -1,5 +1,5 @@
 /*
- * Michael E. Steurer, 2010
+ * Michael E. Steurer, 2011
  * Institute for Information Systems and Computer Media
  * Graz University of Technology
  *
@@ -118,7 +118,7 @@ namespace OMEconomy.OMBase
 
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
                 request.Method = "POST";
-                request.Timeout = 5000;
+                request.Timeout = 20000;
                 request.ContentType = "application/x-www-form-urlencoded";
                 request.ContentLength = data.Length;
                 Stream requestStream = request.GetRequestStream();
