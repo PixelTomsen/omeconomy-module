@@ -51,34 +51,40 @@ namespace OMEconomy.OMBase
     [Extension(Path = "/OpenSim/RegionModules", NodeName = "RegionModule")]
     public class OMBaseModule : ISharedRegionModule
     {
-        private String MODULE_NAME = "OMBase";
-        public String MODULE_VERSION = "0.03.0003";
-
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         private Dictionary<UUID, string> regionSecrets = new Dictionary<UUID, string>();
-        private SceneHandler sceneHandler = SceneHandler.getInstance();
 
-        private bool m_Enabled = false;
+        private bool Enabled = false;
+
         private string gridURL = String.Empty;
         private string gridID = String.Empty;
         internal String gatewayURL = String.Empty;
         private String initURL = String.Empty;
         private String gatewayEnvironment = String.Empty;
 
+        private String MODULE_VERSION = "0.03.003";
+
         private delegate void delegateAsynchronousClaimUser(String gatewayURL, Dictionary<string, string> data);
 
 
         #region ISharedRegion implementation
-        public string Name { get { return MODULE_NAME; } }
+
+        public string Name
+        {
+            get { return "OMBase"; }
+        }
 
         public void Initialise(IConfigSource config)
         {
             IConfig cfg = config.Configs["OpenMetaverseEconomy"];
 
-            if (cfg != null)
-                m_Enabled = cfg.GetBoolean("enabled", false);
-            if (!m_Enabled)
+            if (null == cfg)
+                return;
+
+            Enabled = cfg.GetBoolean("enabled", false);
+
+            if (!Enabled)
                 return;
 
             if (gatewayURL.Equals(String.Empty))
@@ -86,7 +92,7 @@ namespace OMEconomy.OMBase
                 gridID = config.Configs["OpenMetaverseEconomy"].GetString("GridID", String.Empty);
                 gridURL = config.Configs["GridService"].GetString("GridServerURI", String.Empty);
 
-                gridURL = CommunicationHelpers.normaliseURL(gridURL);
+                gridURL = CommunicationHelpers.NormaliseURL(gridURL);
 
                 try
                 {
@@ -97,13 +103,13 @@ namespace OMEconomy.OMBase
                 }
                 catch (Exception e)
                 {
-                    m_log.Error("[OMBASE]: " + e);
+                    m_log.ErrorFormat("[0]: Exception {0}:[1}", Name, e.Message, e.StackTrace);
                 }
 
-                gatewayURL = CommunicationHelpers.getGatewayURL(initURL, MODULE_NAME, MODULE_VERSION, gatewayEnvironment);
+                gatewayURL = CommunicationHelpers.GetGatewayURL(initURL, Name, MODULE_VERSION, gatewayEnvironment);
             }
 
-            MainServer.Instance.AddXmlRPCHandler("OMBaseNotification", genericNotify, false);
+            MainServer.Instance.AddXmlRPCHandler("OMBaseNotification", GenericNotify, false);
         }
 
         public void PostInitialise() { }
@@ -115,66 +121,128 @@ namespace OMEconomy.OMBase
 
         public void AddRegion(Scene scene)
         {
-            if (!m_Enabled)
+            if (!Enabled)
                 return;
-            sceneHandler.addScene(scene);
-            scene.EventManager.OnMakeRootAgent += AddAvatar;
-            scene.EventManager.OnClientClosed += LeaveAvatar;
-            String regionIP = sceneHandler.getRegionIP(scene);
-            String regionName = scene.RegionInfo.RegionName;
-            String regionUUID = scene.RegionInfo.originRegionID.ToString();
 
-            initializeRegion(regionIP, regionName, regionUUID);
+            SceneHandler.Instance.AddScene(scene);
+
+            InitializeRegion(
+                CommunicationHelpers.GetRegionAdress(scene), scene.RegionInfo.RegionName, scene.RegionInfo.originRegionID);
+
             scene.AddCommand(this, "OMBaseTest", "Test Open Metaverse Economy Connection", "Test Open Metaverse Economy Connection", testConnection);
             scene.AddCommand(this, "OMRegister", "Registers the Metaverse Economy Module", "Registers the Metaverse Economy Module", registerModule);
+
         }
 
-        public void RegionLoaded(Scene scene) { }
+        public void RegionLoaded(Scene scene)
+        {
+            if (!Enabled)
+                return;
 
-        public void RemoveRegion(Scene scene) { }
+            scene.EventManager.OnMakeRootAgent += OnMakeRootAgent;
+            scene.EventManager.OnClientClosed += OnClientClosed;
+        }
+
+        public void RemoveRegion(Scene scene)
+        {
+            if (!Enabled)
+                return;
+
+            scene.EventManager.OnMakeRootAgent -= OnMakeRootAgent;
+            scene.EventManager.OnClientClosed -= OnClientClosed;
+
+        }
 
         public void Close()
         {
-            if (m_Enabled)
+            if (Enabled)
             {
-                List<string> regions = sceneHandler.getUniqueRegions().ConvertAll<String>(UUIDToString);
+                List<string> regions = SceneHandler.Instance.GetUniqueRegions().ConvertAll<String>(UUIDToString);
                 Dictionary<string, string> d = new Dictionary<string, string>();
                 d.Add("method", "closeRegion");
                 d.Add("gridURL", gridURL);
                 d.Add("regions", JsonMapper.ToJson(regions));
-                CommunicationHelpers.doRequest(gatewayURL, d);
+                CommunicationHelpers.DoRequest(gatewayURL, d);
             }
         }
 
         #endregion
 
-        internal void initializeRegion(String regionIP, String regionName, String regionUUID)
+        #region // Events
+        private void OnMakeRootAgent(ScenePresence sp)
+        {
+            IClientAPI client = SceneHandler.Instance.LocateClientObject(sp.UUID);
+            Scene currentScene = SceneHandler.Instance.LocateSceneClientIn(sp.UUID);
+
+            Dictionary<string, string> dd = new Dictionary<string, string>();
+            dd.Add("method", "claimUser");
+            dd.Add("avatarUUID", sp.UUID.ToString());
+            dd.Add("avatarName", sp.Name);
+            dd.Add("language", "ENG");
+            dd.Add("viewer", sp.Viewer);
+            dd.Add("clientIP", "http://" + client.GetClientEP().ToString() + "/");
+            dd.Add("regionUUID", SceneHandler.Instance.LocateSceneClientIn(sp.UUID).RegionInfo.RegionID.ToString());
+            dd.Add("gridURL", gridURL);
+            dd.Add("regionIP", CommunicationHelpers.GetRegionAdress(currentScene));
+
+            delegateAsynchronousClaimUser a = new delegateAsynchronousClaimUser(asynchronousClaimUser);
+            a.BeginInvoke(gatewayURL, dd, null, null);
+        }
+
+        private void OnClientClosed(UUID clientID, Scene scene)
+        {
+            Scene sc = SceneHandler.Instance.LocateSceneClientIn(clientID);
+            if (sc == null)
+                return;
+
+            try
+            {
+                Dictionary<string, string> d = new Dictionary<string, string>();
+                d.Add("method", "leaveUser");
+                d.Add("avatarUUID", clientID.ToString());
+                d.Add("regionUUID", sc.RegionInfo.RegionID.ToString());
+                CommunicationHelpers.DoRequest(gatewayURL, d);
+            }
+            catch (Exception e)
+            {
+                m_log.DebugFormat("[OMBASE]: LeaveAvatar(): {0}", e.Message);
+            }
+        }
+        #endregion
+
+        private string UUIDToString(UUID item)
+        {
+            return item.ToString();
+        }
+
+        internal void InitializeRegion(String regionAdress, String regionName, UUID regionUUID)
         {
             Dictionary<string, string> d = new Dictionary<string, string>();
             d.Add("method", "initializeRegion");
-            d.Add("regionIP", regionIP);
+            d.Add("regionIP", regionAdress);
             d.Add("regionName", regionName);
-            d.Add("regionUUID", regionUUID);
+            d.Add("regionUUID", regionUUID.ToString());
             d.Add("gridURL", gridURL);
             d.Add("simulatorVersion", VersionInfo.Version);
             d.Add("moduleVersion", MODULE_VERSION);
-            Dictionary<string, string> response = CommunicationHelpers.doRequest(gatewayURL, d);
+            Dictionary<string, string> response = CommunicationHelpers.DoRequest(gatewayURL, d);
 
             if (response == null)
             {
-                m_log.Error("[OMBASE]: The Service is not Available");
+                m_log.ErrorFormat("[{0}]: The Service is not Available", Name);
             }
             else
             {
-                if (regionSecrets.ContainsKey(UUID.Parse(regionUUID)))
+                if (regionSecrets.ContainsKey(regionUUID))
                 {
-                    m_log.Error("[OMBASE]: The secret for region " + regionUUID + " is already set");
+                    m_log.ErrorFormat("[{0}]: The secret for region {1}  is already set.", Name, regionUUID);
                 }
                 else
                 {
-                    regionSecrets.Add(UUID.Parse(regionUUID), (string)response["regionSecret"]);
+                    regionSecrets.Add(regionUUID, (string)response["regionSecret"]);
                 }
-                m_log.Info("[OMBASE]: The Service is Available");
+
+                m_log.InfoFormat("[{0}]: The Service is Available.", Name);
             }
         }
 
@@ -193,7 +261,7 @@ namespace OMEconomy.OMBase
             d.Add("gridDescription", "");
             d.Add("gridURL", gridURL);
 
-            Dictionary<string, string> response = CommunicationHelpers.doRequest(gatewayURL, d);
+            Dictionary<string, string> response = CommunicationHelpers.DoRequest(gatewayURL, d);
             if (response.ContainsKey("success") && response["success"] == "TRUE")
             {
                 m_log.Info("[OMECONOMY]: +-");
@@ -208,11 +276,6 @@ namespace OMEconomy.OMBase
             }
         }
 
-        private string UUIDToString(UUID item)
-        {
-            return item.ToString();
-        }
-
         private void testConnection(string module, string[] args)
         {
             Dictionary<string, string> d = new Dictionary<string, string>();
@@ -220,7 +283,7 @@ namespace OMEconomy.OMBase
             bool status = false;
             try
             {
-                Dictionary<string, string> response = CommunicationHelpers.doRequest(gatewayURL, d);
+                Dictionary<string, string> response = CommunicationHelpers.DoRequest(gatewayURL, d);
                 if (response.ContainsKey("status") && response["status"] == "INSOMNIA")
                 {
                     status = true;
@@ -237,65 +300,26 @@ namespace OMEconomy.OMBase
             m_log.Info("[OMECONOMY]: +---------------------------------------");
         }
 
-        public String getRegionSecret(UUID regionUUID)
+        public String GetRegionSecret(UUID regionUUID)
         {
             return regionSecrets.ContainsKey(regionUUID) ? regionSecrets[regionUUID] : String.Empty;
         }
 
-        internal void AddAvatar(ScenePresence avatar)
-        {
-            IClientAPI client = sceneHandler.LocateClientObject(avatar.UUID);
-            Scene currentScene = sceneHandler.LocateSceneClientIn(avatar.UUID);
-
-            Dictionary<string, string> dd = new Dictionary<string, string>();
-            dd.Add("method", "claimUser");
-            dd.Add("avatarUUID", avatar.UUID.ToString());
-            dd.Add("avatarName", avatar.Name);
-            dd.Add("language", "ENG");
-            dd.Add("viewer", "HIPPO");
-            dd.Add("clientIP", "http://" + client.GetClientEP().ToString() + "/");
-            dd.Add("regionUUID", sceneHandler.LocateSceneClientIn(avatar.UUID).RegionInfo.RegionID.ToString());
-            dd.Add("gridURL", gridURL);
-            dd.Add("regionIP", sceneHandler.getRegionIP(currentScene));
-
-            delegateAsynchronousClaimUser a = new delegateAsynchronousClaimUser(asynchronousClaimUser);
-            a.BeginInvoke(gatewayURL, dd, null, null);
-        }
-
         private void asynchronousClaimUser(String gatewayURL, Dictionary<string, string> data)
         {
-            if (CommunicationHelpers.doRequest(gatewayURL, data) == null)
+            if (CommunicationHelpers.DoRequest(gatewayURL, data) == null)
             {
-                String message = "The currency service is not available. Please try again later.";
-                sceneHandler.LocateClientObject(new UUID(data["avatarUUID"])).SendBlueBoxMessage(UUID.Zero, "", message);
+                ServiceNotAvailable(new UUID(data["avatarUUID"]));
             }
         }
 
-        public String getGridUIRL() { return gridURL; }
-
-        private void serviceNotAvailable(UUID avatarUUID)
+        private void ServiceNotAvailable(UUID agentID)
         {
             String message = "The currency service is not available. Please try again later.";
-            sceneHandler.LocateClientObject(avatarUUID).SendBlueBoxMessage(UUID.Zero, "", message);
+            SceneHandler.Instance.LocateClientObject(agentID).SendBlueBoxMessage(UUID.Zero, String.Empty, message);
         }
 
-        internal void LeaveAvatar(UUID clientID, Scene scene1)
-        {
-            try
-            {
-                Dictionary<string, string> d = new Dictionary<string, string>();
-                d.Add("method", "leaveUser");
-                d.Add("avatarUUID", clientID.ToString());
-                d.Add("regionUUID", sceneHandler.LocateSceneClientIn(clientID).RegionInfo.RegionID.ToString());
-                CommunicationHelpers.doRequest(gatewayURL, d);
-            }
-            catch (Exception e)
-            {
-                m_log.DebugFormat("[OMBASE]: LeaveAvatar(): {0}", e.Message);
-            }
-        }
-
-        public XmlRpcResponse genericNotify(XmlRpcRequest request, IPEndPoint ep)
+        public XmlRpcResponse GenericNotify(XmlRpcRequest request, IPEndPoint ep)
         {
             XmlRpcResponse r = new XmlRpcResponse();
             try
@@ -303,6 +327,7 @@ namespace OMEconomy.OMBase
                 Hashtable requestData = (Hashtable)request.Params[0];
                 Hashtable communicationData = (Hashtable)request.Params[1];
 
+                #region // Debug
 #if DEBUG
                 m_log.Debug("[OMBASE]: genericNotify(...)");
                 foreach (DictionaryEntry requestDatum in requestData)
@@ -314,18 +339,23 @@ namespace OMEconomy.OMBase
                     m_log.Debug("[OMBASE]:   " + communicationDatum.Key.ToString() + " " + (string)communicationDatum.Value);
                 }
 #endif
+                #endregion
 
                 String method = (string)requestData["method"];
                 requestData.Remove("method");
 
-                if (CommunicationHelpers.validateRequest(communicationData, requestData, gatewayURL))
+                if (CommunicationHelpers.ValidateRequest(communicationData, requestData, gatewayURL))
                 {
                     switch (method)
                     {
-                        case "notifyUser": r.Value = userInteract(requestData); break;
-                        case "writeLog": r.Value = writeLog(requestData); break;
-                        case "notifyIsAlive": r.Value = isAlive(requestData); break;
-                        default: m_log.Error("[OMBASE]: Method " + method + " is not supported"); break;
+                        case "notifyUser": r.Value = userInteract(requestData);
+                            break;
+                        case "writeLog": r.Value = WriteLog(requestData);
+                            break;
+                        case "notifyIsAlive": r.Value = IsAlive(requestData);
+                            break;
+                        default: m_log.ErrorFormat("[{0}]: Method {1} is not supported.", Name, method);
+                            break;
                     }
                 }
                 else
@@ -335,7 +365,7 @@ namespace OMEconomy.OMBase
             }
             catch (Exception e)
             {
-                m_log.Error("[OMBASE]: genericNotify(): " + e.Message);
+                m_log.ErrorFormat("[{0}]: genericNotify() Exception: {1} - {2}", Name, e.Message, e.StackTrace);
                 r.SetFault(1, "Could not parse the requested method");
             }
             return r;
@@ -354,7 +384,7 @@ namespace OMEconomy.OMBase
                 d.Add("method", "getNotificationMessage");
                 d.Add("payloadID", payloadID);
 
-                Dictionary<string, string> messageItems = CommunicationHelpers.doRequest(gatewayURL, d);
+                Dictionary<string, string> messageItems = CommunicationHelpers.DoRequest(gatewayURL, d);
                 if (messageItems == null)
                 {
                     throw new Exception("Could not fetch payload with ID " + payloadID);
@@ -367,13 +397,13 @@ namespace OMEconomy.OMBase
                 }
 #endif
 
-                IClientAPI client = sceneHandler.LocateClientObject(receiverUUID);
+                IClientAPI client = SceneHandler.Instance.LocateClientObject(receiverUUID);
                 if (client == null)
                 {
                     throw new Exception("Could not locate the specified avatar");
                 }
 
-                Scene userScene = sceneHandler.GetSceneByUUID(client.Scene.RegionInfo.originRegionID);
+                Scene userScene = SceneHandler.Instance.GetSceneByUUID(client.Scene.RegionInfo.originRegionID);
                 if (userScene == null)
                 {
                     throw new Exception("Could not locate the specified scene");
@@ -386,7 +416,7 @@ namespace OMEconomy.OMBase
                 IDialogModule dm = null;
                 IClientAPI sender = null;
 
-                IUserManagement userManager = sceneHandler.GetRandomScene().RequestModuleInterface<IUserManagement>();
+                IUserManagement userManager = SceneHandler.Instance.GetRandomScene().RequestModuleInterface<IUserManagement>();
                 if (userManager == null)
                 {
                     throw new Exception("Could not locate UserMangement Interface");
@@ -408,7 +438,7 @@ namespace OMEconomy.OMBase
 
                         client.SendChatMessage(message, (byte)ChatTypeEnum.Say, Vector3.Zero, senderName, senderUUID, (byte)ChatSourceType.Agent, (byte)ChatAudibleLevel.Fully);
 
-                        sender = sceneHandler.LocateClientObject(senderUUID);
+                        sender = SceneHandler.Instance.LocateClientObject(senderUUID);
                         if (sender != null)
                         {
                             sender.SendChatMessage(message, (byte)ChatTypeEnum.Say, Vector3.Zero, senderName, senderUUID, (byte)ChatSourceType.Agent, (byte)ChatAudibleLevel.Fully);
@@ -456,7 +486,7 @@ namespace OMEconomy.OMBase
 
                         client.SendInstantMessage(msg);
 
-                        sender = sceneHandler.LocateClientObject(senderUUID);
+                        sender = SceneHandler.Instance.LocateClientObject(senderUUID);
                         if (sender != null)
                         {
                             sender.SendInstantMessage(msg);
@@ -471,19 +501,18 @@ namespace OMEconomy.OMBase
             }
             catch (Exception e)
             {
-                m_log.Error("[OMBASE]: userInteract() " + e.Message);
+                m_log.ErrorFormat("[{0}]: userInteract() Exception: {1} - {2}", Name, e.Message, e.StackTrace);
                 rparms["success"] = false;
             }
             return rparms;
         }
 
-        private Hashtable writeLog(Hashtable requestData)
+        private Hashtable WriteLog(Hashtable requestData)
         {
             Hashtable rparms = new Hashtable();
             try
             {
-                String message = (string)requestData["message"];
-                m_log.Error("[OMBASE]: " + message);
+                m_log.ErrorFormat("[{0}]: {1}", requestData["message"]);
                 rparms["success"] = true;
             }
             catch (Exception)
@@ -493,14 +522,14 @@ namespace OMEconomy.OMBase
             return rparms;
         }
 
-        private Hashtable isAlive(Hashtable requestData)
+        private Hashtable IsAlive(Hashtable requestData)
         {
             Hashtable rparms = new Hashtable();
             rparms["success"] = false;
             if (requestData.ContainsKey("avatarUUID"))
             {
                 UUID avatarUUID = UUID.Parse((string)requestData["avatarUUID"]);
-                if (sceneHandler.LocateClientObject(avatarUUID) != null)
+                if (SceneHandler.Instance.LocateClientObject(avatarUUID) != null)
                 {
                     rparms["success"] = true;
                 }

@@ -45,14 +45,27 @@ namespace OMEconomy.OMBase
     public class SceneHandler
     {
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+
         private Dictionary<ulong, Scene> m_scene = new Dictionary<ulong, Scene>();
 
-        public int getSceneCount()
+        private static volatile SceneHandler instance = null;
+
+        public static SceneHandler Instance
         {
-            return m_scene.Count;
+            get
+            {
+                lock (m_lock)
+                {
+                    instance = instance == null ? new SceneHandler() : instance;
+                    return instance;
+                }
+            }
+
         }
 
-        public List<UUID> getUniqueRegions()
+        private static object m_lock = new object();
+
+        public List<UUID> GetUniqueRegions()
         {
             List<UUID> uniqueRegions = new List<UUID>();
             lock (m_scene)
@@ -68,14 +81,7 @@ namespace OMEconomy.OMBase
             return uniqueRegions;
         }
 
-        public String getRegionIP(Scene scene)
-        {
-            String regionIP = String.Empty;
-            regionIP = "http://" + scene.RegionInfo.ExternalEndPoint.Address.ToString() + ":" + scene.RegionInfo.HttpPort.ToString() + "/";
-            return regionIP = CommunicationHelpers.normaliseURL(regionIP);
-        }
-
-        public void addScene(Scene scene)
+        public void AddScene(Scene scene)
         {
             if (m_scene.ContainsKey(scene.RegionInfo.RegionHandle))
             {
@@ -87,33 +93,34 @@ namespace OMEconomy.OMBase
             }
         }
 
-        public List<UUID> getOnlineAvatars()
-        {
-            List<UUID> onlineAvatars = new List<UUID>();
-            lock (m_scene)
-            {
-                foreach (Scene s in m_scene.Values)
+        /*
+                public List<UUID> GetOnlineAvatars()
                 {
-                    s.ForEachScenePresence(delegate(ScenePresence sp)
+                    List<UUID> onlineAvatars = new List<UUID>();
+                    lock (m_scene)
                     {
-                        if (!onlineAvatars.Contains(sp.UUID))
+                        foreach (Scene s in m_scene.Values)
                         {
-                            onlineAvatars.Add(sp.UUID);
+                            s.ForEachScenePresence(delegate(ScenePresence sp)
+                            {
+                                if (!onlineAvatars.Contains(sp.UUID))
+                                {
+                                    onlineAvatars.Add(sp.UUID);
+                                }
+                            });
                         }
-                    });
+                    }
+                    return onlineAvatars;
                 }
-            }
-            return onlineAvatars;
-        }
+        */
 
-
-        public Scene GetSceneByUUID(UUID RegionID)
+        public Scene GetSceneByUUID(UUID regionID)
         {
             lock (m_scene)
             {
                 foreach (Scene rs in m_scene.Values)
                 {
-                    if (rs.RegionInfo.originRegionID == RegionID)
+                    if (rs.RegionInfo.originRegionID == regionID)
                     {
                         return rs;
                     }
@@ -122,13 +129,13 @@ namespace OMEconomy.OMBase
             return null;
         }
 
-        public IClientAPI LocateClientObject(UUID AgentID)
+        public IClientAPI LocateClientObject(UUID agentID)
         {
             lock (m_scene)
             {
                 foreach (Scene _scene in m_scene.Values)
                 {
-                    ScenePresence tPresence = _scene.GetScenePresence(AgentID);
+                    ScenePresence tPresence = _scene.GetScenePresence(agentID);
                     if (tPresence != null && !tPresence.IsChildAgent && tPresence.ControllingClient != null)
                     {
                         return tPresence.ControllingClient;
@@ -138,13 +145,13 @@ namespace OMEconomy.OMBase
             return null;
         }
 
-        public SceneObjectPart findPrim(UUID objectUUID)
+        public SceneObjectPart FindPrim(UUID primID)
         {
             lock (m_scene)
             {
                 foreach (Scene s in m_scene.Values)
                 {
-                    SceneObjectPart part = s.GetSceneObjectPart(objectUUID);
+                    SceneObjectPart part = s.GetSceneObjectPart(primID);
                     if (part != null)
                     {
                         return part;
@@ -154,31 +161,13 @@ namespace OMEconomy.OMBase
             return null;
         }
 
-
-        public SceneObjectPart findPrim(uint objectID)
-        {
-            lock (m_scene)
-            {
-                foreach (Scene s in m_scene.Values)
-                {
-                    SceneObjectPart part = s.GetSceneObjectPart(objectID);
-                    if (part != null)
-                    {
-                        return part;
-                    }
-                }
-            }
-            return null;
-        }
-
-
-        public Scene LocateSceneClientIn(UUID AgentId)
+        public Scene LocateSceneClientIn(UUID agentID)
         {
             lock (m_scene)
             {
                 foreach (Scene _scene in m_scene.Values)
                 {
-                    ScenePresence tPresence = _scene.GetScenePresence(AgentId);
+                    ScenePresence tPresence = _scene.GetScenePresence(agentID);
                     if (tPresence != null && !tPresence.IsChildAgent)
                     {
                         return _scene;
@@ -198,7 +187,7 @@ namespace OMEconomy.OMBase
             return null;
         }
 
-        public string resolveAgentName(UUID agentID)
+        public string ResolveAgentName(UUID agentID)
         {
             Scene scene = GetRandomScene();
             string agentName = String.Empty;
@@ -211,27 +200,28 @@ namespace OMEconomy.OMBase
             return agentName;
         }
 
-        public string resolveGroupName(UUID groupId)
+        public string ResolveGroupName(UUID groupID)
         {
             Scene scene = GetRandomScene();
             IGroupsModule gm = scene.RequestModuleInterface<IGroupsModule>();
             try
             {
-                string @group = gm.GetGroupRecord(groupId).GroupName;
+                string @group = gm.GetGroupRecord(groupID).GroupName;
                 if (@group != null)
                 {
-                    m_log.DebugFormat("[OMBASE]: Resolved group {0} to " + @group, groupId);
+                    m_log.DebugFormat("[OMBASE]: Resolved group {0} to {1}", groupID, @group);
                     return @group;
                 }
             }
             catch (Exception)
             {
-                m_log.ErrorFormat("[OMBASE]: Could not resolve group {0}", groupId);
+                m_log.ErrorFormat("[OMBASE]: Could not resolve group {0}", groupID);
             }
+
             return String.Empty;
         }
 
-        public String getObjectLocation(SceneObjectPart part)
+        public String GetObjectLocation(SceneObjectPart part)
         {
             int x = Convert.ToInt32(part.AbsolutePosition.X);
             int y = Convert.ToInt32(part.AbsolutePosition.Y);
@@ -240,17 +230,5 @@ namespace OMEconomy.OMBase
             return "<" + x + "/" + y + "/" + z + ">";
         }
 
-        private SceneHandler() { }
-        private static volatile SceneHandler instance = null;
-        public static SceneHandler getInstance()
-        {
-            lock (m_lock)
-            {
-                instance = instance == null ? new SceneHandler() : instance;
-                return instance;
-            }
-        }
-
-        private static object m_lock = new object();
     }
 }

@@ -1,11 +1,9 @@
-OMEconomy OpenSim-Modul (VirWox)
+OMEconomy VirWox(https://www.virwox.com/) OpenSim Region addone-module
 
 
-Michael Erwin Steuer (founder)
-Pixel Tomsen (chk)
+Michael Erwin Steuer - michael.steurer[at]iicm.tugraz.at
+Pixel Tomsen (chk) pixel.tomsen[at]gridnet.info
 Snoopy Pfeffer
-
-
 
 
 This software uses components from the following developers:

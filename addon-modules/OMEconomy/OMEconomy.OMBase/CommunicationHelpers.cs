@@ -49,15 +49,23 @@ namespace OMEconomy.OMBase
     {
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
-
-        public static String normaliseURL(String url)
+        public static String NormaliseURL(String url)
         {
             url = url.EndsWith("/") ? url : (url + "/");
             url = url.StartsWith("http://") ? url : ("http://" + url);
             return url;
         }
 
-        public static String hashParameters(Hashtable parameters, string secret)
+        public static String GetRegionAdress(Scene scene)
+        {
+            if (scene == null)
+                return String.Empty;
+
+            return String.Format("http://{0}:{1}/",
+                scene.RegionInfo.ExternalEndPoint.Address.ToString(), scene.RegionInfo.HttpPort.ToString());
+        }
+
+        public static String HashParameters(Hashtable parameters, string secret)
         {
             StringBuilder concat = new StringBuilder();
 
@@ -72,10 +80,10 @@ namespace OMEconomy.OMBase
             {
                 concat.Append((string)de.Key + (string)de.Value);
             }
-            return hashString(concat.ToString(), secret);
+            return HashString(concat.ToString(), secret);
         }
 
-        public static String hashString(string message, string secret)
+        public static String HashString(string message, string secret)
         {
             SHA1 hashFunction = new SHA1Managed();
             byte[] hashValue = hashFunction.ComputeHash(Encoding.UTF8.GetBytes(message + secret));
@@ -89,7 +97,7 @@ namespace OMEconomy.OMBase
             return hashHex;
         }
 
-        public static String serializeDictionary(Dictionary<string, string> data)
+        public static String SerializeDictionary(Dictionary<string, string> data)
         {
             string value = String.Empty;
             foreach (KeyValuePair<string, string> pair in data)
@@ -99,16 +107,18 @@ namespace OMEconomy.OMBase
             return value.Remove(value.Length - 1);
         }
 
-        public static Dictionary<string, string> doRequest(string url, Dictionary<string, string> postParameters)
+        public static Dictionary<string, string> DoRequest(string url, Dictionary<string, string> postParameters)
         {
-            string postData = postParameters == null ? "" : CommunicationHelpers.serializeDictionary(postParameters);
+            string postData = postParameters == null ? "" : CommunicationHelpers.SerializeDictionary(postParameters);
             ASCIIEncoding encoding = new ASCIIEncoding();
             byte[] data = encoding.GetBytes(postData);
             String str = String.Empty;
 
+            #region // Debug
 #if DEBUG
             m_log.Debug("[OMECONOMY] Request: " + url + "?" + postData);
 #endif
+            #endregion
 
             try
             {
@@ -136,9 +146,11 @@ namespace OMEconomy.OMBase
                 responseStream.Close();
                 response.Close();
 
+                #region // Debug
 #if DEBUG
-                m_log.Debug("[OMECONOMY] Response: " + str);
+                m_log.DebugFormat("[OMECONOMY] Response: {0}", str);
 #endif
+                #endregion
 
                 Dictionary<string, string> returnValue = JsonMapper.ToObject<Dictionary<string, string>>(str);
                 return returnValue != null ? returnValue : new Dictionary<string, string>();
@@ -146,12 +158,12 @@ namespace OMEconomy.OMBase
             }
             catch (Exception e)
             {
-                m_log.Error("[OMBASE]: Could not parse response " + e);
+                m_log.ErrorFormat("[OMBASE]: Could not parse response Exception: {0} - {1}", e.Message, e.StackTrace);
                 return null;
             }
         }
 
-        public static bool validateRequest(Hashtable communicationData, Hashtable requestData, string gatewayURL)
+        public static bool ValidateRequest(Hashtable communicationData, Hashtable requestData, string gatewayURL)
         {
             OMBaseModule omBase = new OMBaseModule();
 
@@ -164,11 +176,11 @@ namespace OMEconomy.OMBase
             d.Add("method", "verifyNotification");
             d.Add("notificationID", notificationID);
             d.Add("regionUUID", regionUUID.ToString());
-            d.Add("hashValue", hashString(nonce++.ToString(), omBase.getRegionSecret(regionUUID)));
-            Dictionary<string, string> response = doRequest(gatewayURL, d);
+            d.Add("hashValue", HashString(nonce++.ToString(), omBase.GetRegionSecret(regionUUID)));
+            Dictionary<string, string> response = DoRequest(gatewayURL, d);
             string secret = (string)response["secret"];
 
-            if (hashValue == hashParameters(requestData, secret))
+            if (hashValue == HashParameters(requestData, secret))
             {
                 return true;
             }
@@ -178,27 +190,31 @@ namespace OMEconomy.OMBase
             }
         }
 
-        public static string getGatewayURL(string initURL, string name, string moduleVersion, string gatewayEnvironment)
+        public static string GetGatewayURL(string initURL, string name, string moduleVersion, string gatewayEnvironment)
         {
+
+            #region // Debug
 #if DEBUG
-            m_log.Debug(String.Format("[OMECONOMY] getGatewayURL({0}, {1}, {2}, {3})", initURL, name, moduleVersion, gatewayEnvironment));
+            m_log.DebugFormat("[OMECONOMY] getGatewayURL({0}, {1}, {2}, {3})",
+                initURL, name, moduleVersion, gatewayEnvironment);
 #endif
+            #endregion
 
             Dictionary<string, string> d = new Dictionary<string, string>();
             d.Add("moduleName", name);
             d.Add("moduleVersion", moduleVersion);
             d.Add("gatewayEnvironment", gatewayEnvironment);
 
-            Dictionary<string, string> response = CommunicationHelpers.doRequest(initURL, d);
+            Dictionary<string, string> response = CommunicationHelpers.DoRequest(initURL, d);
             string gatewayURL = (string)response["gatewayURL"];
 
             if (gatewayURL != null)
             {
-                m_log.Info("[" + name + "]: GatewayURL: " + gatewayURL);
+                m_log.InfoFormat("[{0}]: GatewayURL: {1}", name, gatewayURL);
             }
             else
             {
-                m_log.Error("[" + name + "]: Could not set the GatewayURL - Please restart or contact the module vendor");
+                m_log.ErrorFormat("[{0}]: Could not set the GatewayURL - Please restart or contact the module vendor", name);
             }
             return gatewayURL;
         }
