@@ -180,7 +180,7 @@ namespace OMEconomy.OMBase
             dd.Add("avatarName", sp.Name);
             dd.Add("language", "ENG");
             dd.Add("viewer", sp.Viewer);
-            dd.Add("clientIP", "http://" + client.GetClientEP().ToString() + "/");
+            dd.Add("clientIP", "http://" + client.RemoteEndPoint.ToString() + "/");
             dd.Add("regionUUID", SceneHandler.Instance.LocateSceneClientIn(sp.UUID).RegionInfo.RegionID.ToString());
             dd.Add("gridURL", gridURL);
             dd.Add("regionIP", CommunicationHelpers.GetRegionAdress(currentScene));

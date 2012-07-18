@@ -4,7 +4,7 @@
 ;Developer : Michael Erwin Steuer
 ;Code-Version : 0.03.0003
 ;
-;Version : Prebuild, Simulator-Version 0.7.3
+;Version : Prebuild, Simulator-Version 0.7.4
 ;Start : 2011-10-26 - Pixel Tomsen (chk) (pixel.tomsen [at] gridnet.info)
 ;
 ;git-Source: https://github.com/PixelTomsen/omeconomy-module
